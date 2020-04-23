@@ -26,6 +26,7 @@ int port;
 char *cookies;
 char *http_addr;
 char *file_addr;      // adres pliku adresu http
+char *host_addr;      // host (inny niż ip)
 
 bool chunked = false;
 
@@ -60,15 +61,26 @@ void parse_command(char *argv[]) {
     cookies = argv[2];
     http_addr = argv[3];
     
+    host_addr = malloc(sizeof(char) * BUFFER_SIZE);
+    bzero(host_addr, BUFFER_SIZE);
+    
     int slash = 0;
-    for(size_t i = 0; i < strlen(argv[3]); i++) {
+    int i = 0;
+    while (i < strlen(argv[3])) {
         if(argv[3][i] == '/') {
             slash++;
         }
-        if(slash == 3) {
+        if(slash == 2) { 
+            i++;
+            int first = i;
+            while (i < strlen(argv[3]) && argv[3][i] != '/')  {
+                host_addr[i - first] = argv[3][i];
+                i++;
+            }
             file_addr = &argv[3][i];
             break;
         }
+        i++;
     }
 }
 
@@ -78,7 +90,7 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
     
     snprintf(sendline, BUFFER_SIZE, 
         "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n", file_addr, conn_addr);
+        "Host: %s\r\n", file_addr, host_addr);
     
     FILE *file = fopen(cookies, "r");
     
@@ -115,10 +127,16 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
 void receive_first_chunk(int sockfd) {
     char readline[BUFFER_SIZE + 1];
     
+    
     bzero(readline, sizeof(readline)); 
-    if (read(sockfd, readline, sizeof(readline)) < 0) {
+    
+    
+    int len = read(sockfd, readline, sizeof(readline));
+    //printf("len = %d\n", len);
+    if (len < 0) {
         syserr("bad read from socket");
     }
+    
     
     if (strncmp(readline, OK_CODE, strlen(OK_CODE)) != 0) { 
         int i = strlen(OK_CODE) - 4;
@@ -128,7 +146,6 @@ void receive_first_chunk(int sockfd) {
         return;
     }
     
-    //printf("[dbg] otrzymałem dane od serwera:\n%s\n", readline);
     
     int i = 0;
     while (!(readline[i] == '\r' && readline[i + 1] == '\n' &&
@@ -150,11 +167,40 @@ void receive_first_chunk(int sockfd) {
         
         i++;
     }
+    
+    /*
+    printf("\n[dbg] otrzymałem dane od serwera:\n");
+    for(int i = 0; i < len; i++) {
+        printf("%c", readline[i]);
+    }
+    */
 }
 
-
-void receive_following_chunk(int sockfd) {
+ 
+int receive_following_chunk(int sockfd) { // zwraca tyle ile wczytał
+    char readline[BUFFER_SIZE + 1];
     
+    
+    bzero(readline, sizeof(readline)); 
+    
+    int len = read(sockfd, readline, sizeof(readline));
+    //printf("len = %d\n", len);
+    if (len < 0) {
+        syserr("bad read from socket");
+    }
+    
+    if (len == 0) {
+        return 0;
+    }
+    
+    
+    /*
+    printf("\n[dbg] otrzymałem dane od serwera:\n");
+    for(int i = 0; i < len; i++) {
+        printf("%c", readline[i]);
+    }
+    */
+    return len;
 }
 
 
@@ -163,7 +209,7 @@ int main(int argc, char *argv[]) {
         syserr("wrong number of arguments");
     }
     parse_command(argv);
-    printf("[dbg] %s %d %s %s %s\n", conn_addr, port, cookies, http_addr, file_addr);
+    printf("[dbg] %s %d %s %s %s %s\n", conn_addr, port, cookies, http_addr, host_addr, file_addr);
     
     
     int sockfd;
@@ -185,6 +231,21 @@ int main(int argc, char *argv[]) {
     send_get_request(sockfd);
     
     receive_first_chunk(sockfd);
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    
+    receive_following_chunk(sockfd);
+    receive_following_chunk(sockfd);
+
     
     close(sockfd);
 }
