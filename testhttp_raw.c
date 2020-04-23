@@ -11,6 +11,7 @@
 
 #include "err.h"
 
+#define GET_SIZE    66000
 #define BUFFER_SIZE 65000
 #define SA struct sockaddr 
 
@@ -27,6 +28,11 @@ char *cookies;
 char *http_addr;
 char *file_addr;      // adres pliku adresu http
 char *host_addr;      // host (inny niż ip)
+
+char* response;         // whole response from server
+size_t response_length; // length of response
+char* response_body;    // body of the response
+
 
 bool chunked = false;
 
@@ -86,9 +92,9 @@ void parse_command(char *argv[]) {
 
 
 void send_get_request(int sockfd) { // trzeba dodać cookies
-    char sendline[BUFFER_SIZE + 1];
+    char sendline[GET_SIZE + 1] = {0};
     
-    snprintf(sendline, BUFFER_SIZE, 
+    snprintf(sendline, GET_SIZE, 
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n", file_addr, host_addr);
     
@@ -115,94 +121,110 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
     }
     
     strncat(sendline, "\r\n", strlen("\r\n"));
+
     
     if (write(sockfd, sendline, sizeof(sendline)) < 0) {
         syserr("bad write to socket");
     }
     
     printf("[dbg] wysyłam zapytanie:\n%s\n", sendline);
-
+    
+    fclose(file);
 }
 
-void receive_first_chunk(int sockfd) {
+
+void read_response(int sockfd) {
+    FILE *stream;
+    size_t len;
+    stream = open_memstream(&response, &len);
+    
     char readline[BUFFER_SIZE + 1];
+    int length = 0;
     
+    do {
+        bzero(readline, sizeof(readline)); 
+        length = read(sockfd, readline, sizeof(readline));
+        if (length < 0) {
+            syserr("bad read");
+        }
+        for (int i = 0; i < length; i++) {
+            fprintf(stream, "%c", readline[i]);
+        }
+    } while (length);
     
-    bzero(readline, sizeof(readline)); 
+    fflush(stream);
     
+    response_length = len;
     
-    int len = read(sockfd, readline, sizeof(readline));
-    //printf("len = %d\n", len);
-    if (len < 0) {
-        syserr("bad read from socket");
-    }
+    fclose(stream);
+}
+
+
+void parse_header(int sockfd) {
     
-    
-    if (strncmp(readline, OK_CODE, strlen(OK_CODE)) != 0) { 
+    if (strncmp(response, OK_CODE, strlen(OK_CODE)) != 0) { 
         int i = strlen(OK_CODE) - 4;
-        while (readline[i++] != '\r') {
-            printf("%c", readline[i]);
+        while (response[i++] != '\r') {
+            printf("%c", response[i]);
         }
         return;
     }
     
     
     int i = 0;
-    while (!(readline[i] == '\r' && readline[i + 1] == '\n' &&
-              readline[i + 2] == '\r' && readline[i + 3] == '\n')) {
+    while (!(response[i] == '\r' && response[i + 1] == '\n' &&
+              response[i + 2] == '\r' && response[i + 3] == '\n')) {
         
-        if (strncmp(&readline[i], COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
+        if (strncmp(&response[i], COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
             int j = i + strlen(COOKIE);
             
-            while (readline[j] != ';' && readline[j] != '\r') {
-                printf("%c", readline[j++]);
+            while (response[j] != ';' && response[j] != '\r') {
+                printf("%c", response[j++]);
             }
         }
 
-        if (strncmp(&readline[i], ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
-            if (strncmp(&readline[i + strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
+        if (strncmp(&response[i], ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
+            if (strncmp(&response[i + strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
                 chunked = true;
+                printf("[dbg] chunked!\n");
             }
         }
         
         i++;
     }
     
-    /*
-    printf("\n[dbg] otrzymałem dane od serwera:\n");
-    for(int i = 0; i < len; i++) {
-        printf("%c", readline[i]);
-    }
-    */
+    response_body = &response[i+4];
 }
 
- 
-int receive_following_chunk(int sockfd) { // zwraca tyle ile wczytał
-    char readline[BUFFER_SIZE + 1];
-    
-    
-    bzero(readline, sizeof(readline)); 
-    
-    int len = read(sockfd, readline, sizeof(readline));
-    //printf("len = %d\n", len);
-    if (len < 0) {
-        syserr("bad read from socket");
-    }
-    
-    if (len == 0) {
-        return 0;
-    }
-    
-    
-    /*
-    printf("\n[dbg] otrzymałem dane od serwera:\n");
-    for(int i = 0; i < len; i++) {
-        printf("%c", readline[i]);
-    }
-    */
-    return len;
-}
 
+int size_of_body(int sockfd) {
+    int ret = 0;
+    
+    int i = 0;
+    while (true) {
+        int j = i;
+        while (response_body[j] != '\r') {
+            j++;
+        }
+        response_body[j] = '\0';
+        
+        int chunk_size = (int)strtol(&response_body[i], NULL, 16);
+        
+        printf("[dbg] chunk_size = %d\n", chunk_size);
+        
+        if (!chunk_size) {
+            break;
+        }
+        
+        
+        
+        ret += chunk_size;
+        
+        i = j + chunk_size + 1;
+    }
+    
+    return ret;
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -230,22 +252,18 @@ int main(int argc, char *argv[]) {
     
     send_get_request(sockfd);
     
-    receive_first_chunk(sockfd);
-    receive_following_chunk(sockfd);
+    read_response(sockfd);
     
-    receive_following_chunk(sockfd);
+    parse_header(sockfd);
     
-    receive_following_chunk(sockfd);
+    printf("Dlugosc zasobu: %d\n", size_of_body(sockfd));
     
-    receive_following_chunk(sockfd);
+    for (int i = 0; i < response_length; i++) {
+        printf("%c", response[i]);
+    }
     
-    receive_following_chunk(sockfd);
     
-    receive_following_chunk(sockfd);
-    
-    receive_following_chunk(sockfd);
-    receive_following_chunk(sockfd);
-
-    
+    free(response);
+    free(host_addr);
     close(sockfd);
 }
