@@ -46,7 +46,6 @@ void parse_command(char *argv[]) {
     
     conn_addr = argv[1];
     
-    printf("%c\n", conn_addr[0]);
     if (conn_addr[0] < '0' || conn_addr[0] > '9') {
         struct hostent *hstnm;
         hstnm = gethostbyname(conn_addr);
@@ -79,13 +78,31 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
     
     snprintf(sendline, BUFFER_SIZE, 
         "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "\r\n", file_addr, conn_addr);
+        "Host: %s\r\n", file_addr, conn_addr);
     
     FILE *file = fopen(cookies, "r");
     
     
+    char c;
+    bool new_line = true;
+    int i = strlen(sendline);
+    while (fscanf(file, "%c", &c) != EOF) {
+        if (new_line) {
+            strncat(sendline, COOKIE, strlen(COOKIE));
+            i += strlen(COOKIE);
+        }
+        if (c == '\n') {
+            new_line = true;
+            sendline[i++] = '\r';
+            sendline[i++] = '\n';
+        }
+        else {
+            new_line = false;
+            sendline[i++] = c;
+        }
+    }
     
+    strncat(sendline, "\r\n", strlen("\r\n"));
     
     if (write(sockfd, sendline, sizeof(sendline)) < 0) {
         syserr("bad write to socket");
