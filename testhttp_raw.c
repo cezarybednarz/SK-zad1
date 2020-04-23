@@ -127,7 +127,7 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
         syserr("bad write to socket");
     }
     
-    printf("[dbg] wysyłam zapytanie:\n%s\n", sendline);
+    //printf("[dbg] wysyłam zapytanie:\n%s\n", sendline);
     
     fclose(file);
 }
@@ -178,15 +178,16 @@ void parse_header(int sockfd) {
         if (strncmp(&response[i], COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
             int j = i + strlen(COOKIE);
             
-            while (response[j] != ';' && response[j] != '\r') {
+            while (response[j] != ';' && response[j] != ',' && response[j] != '\r') {
                 printf("%c", response[j++]);
             }
+            printf("\n");
         }
 
         if (strncmp(&response[i], ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
             if (strncmp(&response[i + strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
                 chunked = true;
-                printf("[dbg] chunked!\n");
+                //printf("[dbg] chunked!\n");
             }
         }
         
@@ -208,9 +209,11 @@ int size_of_body(int sockfd) {
         }
         response_body[j] = '\0';
         
+        
+        
         int chunk_size = (int)strtol(&response_body[i], NULL, 16);
         
-        printf("[dbg] chunk_size = %d\n", chunk_size);
+        //printf("\n[dbg] chunk_size = %d\n", chunk_size);
         
         if (!chunk_size) {
             break;
@@ -220,7 +223,7 @@ int size_of_body(int sockfd) {
         
         ret += chunk_size;
         
-        i = j + chunk_size + 1;
+        i = j + chunk_size + 4;
     }
     
     return ret;
@@ -231,7 +234,7 @@ int main(int argc, char *argv[]) {
         syserr("wrong number of arguments");
     }
     parse_command(argv);
-    printf("[dbg] %s %d %s %s %s %s\n", conn_addr, port, cookies, http_addr, host_addr, file_addr);
+    //printf("[dbg] %s %d %s %s %s %s\n", conn_addr, port, cookies, http_addr, host_addr, file_addr);
     
     
     int sockfd;
@@ -256,11 +259,13 @@ int main(int argc, char *argv[]) {
     
     parse_header(sockfd);
     
-    printf("Dlugosc zasobu: %d\n", size_of_body(sockfd));
     
+    printf("Dlugosc zasobu: %d\n", size_of_body(sockfd));
+    /*
     for (int i = 0; i < response_length; i++) {
         printf("%c", response[i]);
     }
+    */
     
     
     free(response);
