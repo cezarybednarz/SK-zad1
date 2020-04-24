@@ -138,19 +138,15 @@ void read_header(FILE *stream) {
     do {
         line_size = getline(&line_buf, &line_buf_size, stream);
         
-        printf("%s\n", line_buf);
-        
         if (strncmp(line_buf, "\r\n", strlen("\r\n")) == 0) { // end of header
             break;
         }
-        
-        if (strncmp(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
+        else if (strncmp(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
             if (strncmp(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
                 chunked = true;
             }
         }
-        
-        if (strncmp(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
+        else if (strncmp(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
             int i = strlen(CONTENT);
             while (line_buf[i] != '\r') { 
                 i++;
@@ -158,8 +154,7 @@ void read_header(FILE *stream) {
             line_buf[i] = '\0';
             content_length = atoi(&line_buf[i]);
         }
-        
-        if (strncmp(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
+        else if (strncmp(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
             int i = strlen(COOKIE);
             while (line_buf[i] != '\r' && line_buf[i] != ';' && line_buf[i] != ',') {
                 printf("%c", line_buf[i++]);
@@ -178,8 +173,23 @@ void read_body_chunked(FILE *stream) {
     do {
         line_size = getline(&line_buf, &line_buf_size, stream);
         
+        int i = 0;
+        while (line_buf[i] != '\r') {
+            i++;
+        }
+        line_buf[i] = '\0';
+        
+        int chunk_size = (int)strtol(line_buf, NULL, 16);
+        if (chunk_size == 0) { // last chunk
+            break;
+        }
+        
+        content_length += chunk_size;
+        
+        for (i = 0; i < chunk_size + 2; i++) {
+            fgetc(stream);
+        }
     } while (line_size);
-    
 }
 
 
