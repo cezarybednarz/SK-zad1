@@ -11,7 +11,7 @@
 
 #include "err.h"
 
-#define GET_SIZE    66000
+#define GET_SIZE    65000
 #define BUFFER_SIZE 65000
 #define SA struct sockaddr 
 
@@ -44,8 +44,9 @@ void parse_command(char *argv[]) {
             colon = true;
         }
     }
+    
     if (!colon) { 
-        syserr("please enter valid connection address: <address>:<port>");
+        syserr("not valid address");
     }
     
     conn_addr = argv[1];
@@ -77,7 +78,7 @@ void parse_command(char *argv[]) {
 }
 
 
-void send_get_request(int sockfd) { // trzeba dodać cookies
+void send_get_request(int sockfd) { 
     char sendline[GET_SIZE + 1] = {0};
     
     snprintf(sendline, GET_SIZE, 
@@ -112,13 +113,11 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
         syserr("bad write to socket");
     }
     
-    //printf("[dbg] wysyłam zapytanie:\n%s\n", sendline);
-    
     fclose(file);
 }
 
 /* ===== używanie streama po sockecie ===== */
-void read_header(FILE *stream) {
+bool read_header(FILE *stream) {
     char *line_buf = NULL;
     size_t line_buf_size = 0;
     ssize_t line_size = 0;
@@ -128,11 +127,14 @@ void read_header(FILE *stream) {
     
     // check if response is "200 OK"
     if (strncmp(line_buf, OK_CODE, strlen(OK_CODE)) != 0) { 
-        int i = strlen(OK_CODE) - 4;
-        while (line_buf[i++] != '\r') {
+        int i = 0;
+        while (line_buf[i] != '\r') {
             printf("%c", line_buf[i]);
+            i++;
         }
-        return;
+        printf("\n");
+        free(line_buf);
+        return false;
     }
     
     do {
@@ -152,7 +154,7 @@ void read_header(FILE *stream) {
                 i++;
             }
             line_buf[i] = '\0';
-            content_length = atoi(&line_buf[i]);
+            content_length = atoi(&line_buf[strlen(CONTENT)]);
         }
         else if (strncmp(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
             int i = strlen(COOKIE);
@@ -163,6 +165,10 @@ void read_header(FILE *stream) {
         }
         
     } while (line_size);
+    
+    
+    free(line_buf);
+    return true;
 }
 
 void read_body_chunked(FILE *stream) {
@@ -186,42 +192,21 @@ void read_body_chunked(FILE *stream) {
         
         content_length += chunk_size;
         
-        for (i = 0; i < chunk_size + 2; i++) {
+        for (i = 0; i < chunk_size + 2; i++) { // skip chunk_size + 2 bytes
             fgetc(stream);
         }
     } while (line_size);
+    
+    free(line_buf);
 }
 
-
-/* ===== koniec ===== */
-/*
-int size_of_body(int sockfd) {
-    int ret = 0;
-    
-    int i = 0;
-    while (true) {
-        int j = i;
-        while (response_body[j] != '\r') {
-            j++;
-        }
-        response_body[j] = '\0';
-        
-        int chunk_size = (int)strtol(&response_body[i], NULL, 16);
-        
-        //printf("\n[dbg] chunk_size = %d\n", chunk_size);
-        
-        if (!chunk_size) {
-            break;
-        }
-        
-        ret += chunk_size;
-        
-        i = j + chunk_size + 4;
+void read_body_not_chunked(FILE *stream) {
+    for (int i = 0; i < content_length; i++) {
+        fgetc(stream);
     }
-    
-    return ret;
 }
-*/
+
+
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         syserr("wrong number of arguments");
@@ -267,13 +252,17 @@ int main(int argc, char *argv[]) {
     
     
     send_get_request(sock);
-    read_header(fp);
     
-    if (chunked) {
-        read_body_chunked(fp);
-    }
+    if (read_header(fp)) {
+        if (chunked) {
+            read_body_chunked(fp);
+        }
+        else {
+            read_body_not_chunked(fp);
+        }
+        printf("Dlugosc zasobu: %d\n", content_length);
+    }    
     
-    printf("Dlugosc zasobu: %d\n", content_length);
     
     free(host_addr);
     fclose(fp);
