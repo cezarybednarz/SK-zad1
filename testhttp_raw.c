@@ -21,6 +21,7 @@ static const char *OK_CODE = "HTTP/1.1 200";
 static const char *ENCODING = "Transfer-Encoding: ";
 static const char *COOKIE = "Set-Cookie: ";
 static const char *CHUNKED = "chunked";
+static const char *CONTENT = "Content-Length: ";
 
 char *conn_addr;
 char *port;
@@ -29,12 +30,8 @@ char *http_addr;
 char *file_addr;      // adres pliku adresu http
 char *host_addr;      // host (inny niż ip)
 
-char* response;         // whole response from server
-size_t response_length; // length of response
-char* response_body;    // body of the response
-
-
 bool chunked = false;
+int content_length = 0; 
 
 
 void parse_command(char *argv[]) {
@@ -52,17 +49,6 @@ void parse_command(char *argv[]) {
     }
     
     conn_addr = argv[1];
-    
-    /*if (conn_addr[0] < '0' || conn_addr[0] > '9') {
-        struct hostent *hstnm;
-        hstnm = gethostbyname(conn_addr);
-        if (hstnm == 0) {
-            syserr("wrong host name");
-        }
-        printf("[dbg] zamieniam: %s\n", conn_addr);
-        conn_addr = inet_ntoa(*(struct in_addr *)hstnm->h_name); // to chyba nie dziala
-        printf("[dbg] na: %s\n", conn_addr);
-    }*/
     
     cookies = argv[2];
     http_addr = argv[3];
@@ -100,7 +86,6 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
     
     FILE *file = fopen(cookies, "r");
     
-    
     char c;
     bool new_line = true;
     int i = strlen(sendline);
@@ -132,72 +117,74 @@ void send_get_request(int sockfd) { // trzeba dodać cookies
     fclose(file);
 }
 
-
-void read_response(int sockfd) {
-    FILE *stream;
-    size_t len;
-    stream = open_memstream(&response, &len);
+/* ===== używanie streama po sockecie ===== */
+void read_header(FILE *stream) {
+    char *line_buf = NULL;
+    size_t line_buf_size = 0;
+    ssize_t line_size = 0;
     
-    char readline[BUFFER_SIZE + 1];
-    int length = 0;
+    line_size = getline(&line_buf, &line_buf_size, stream);
     
-    do {
-        bzero(readline, sizeof(readline)); 
-        length = read(sockfd, readline, sizeof(readline));
-        if (length < 0) {
-            syserr("bad read");
-        }
-        for (int i = 0; i < length; i++) {
-            fprintf(stream, "%c", readline[i]);
-        }
-    } while (length);
     
-    fflush(stream);
-    
-    response_length = len;
-    
-    fclose(stream);
-}
-
-
-void parse_header(int sockfd) {
-    
-    if (strncmp(response, OK_CODE, strlen(OK_CODE)) != 0) { 
+    // check if response is "200 OK"
+    if (strncmp(line_buf, OK_CODE, strlen(OK_CODE)) != 0) { 
         int i = strlen(OK_CODE) - 4;
-        while (response[i++] != '\r') {
-            printf("%c", response[i]);
+        while (line_buf[i++] != '\r') {
+            printf("%c", line_buf[i]);
         }
         return;
     }
     
-    
-    int i = 0;
-    while (!(response[i] == '\r' && response[i + 1] == '\n' &&
-              response[i + 2] == '\r' && response[i + 3] == '\n')) {
+    do {
+        line_size = getline(&line_buf, &line_buf_size, stream);
         
-        if (strncmp(&response[i], COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
-            int j = i + strlen(COOKIE);
-            
-            while (response[j] != ';' && response[j] != ',' && response[j] != '\r') {
-                printf("%c", response[j++]);
+        printf("%s\n", line_buf);
+        
+        if (strncmp(line_buf, "\r\n", strlen("\r\n")) == 0) { // end of header
+            break;
+        }
+        
+        if (strncmp(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
+            if (strncmp(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
+                chunked = true;
+            }
+        }
+        
+        if (strncmp(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
+            int i = strlen(CONTENT);
+            while (line_buf[i] != '\r') { 
+                i++;
+            }
+            line_buf[i] = '\0';
+            content_length = atoi(&line_buf[i]);
+        }
+        
+        if (strncmp(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
+            int i = strlen(COOKIE);
+            while (line_buf[i] != '\r' && line_buf[i] != ';' && line_buf[i] != ',') {
+                printf("%c", line_buf[i++]);
             }
             printf("\n");
         }
-
-        if (strncmp(&response[i], ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
-            if (strncmp(&response[i + strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
-                chunked = true;
-                //printf("[dbg] chunked!\n");
-            }
-        }
         
-        i++;
-    }
+    } while (line_size);
+}
+
+void read_body_chunked(FILE *stream) {
+    char *line_buf = NULL;
+    size_t line_buf_size = 0;
+    ssize_t line_size = 0;
     
-    response_body = &response[i+4];
+    do {
+        line_size = getline(&line_buf, &line_buf_size, stream);
+        
+    } while (line_size);
+    
 }
 
 
+/* ===== koniec ===== */
+/*
 int size_of_body(int sockfd) {
     int ret = 0;
     
@@ -208,8 +195,6 @@ int size_of_body(int sockfd) {
             j++;
         }
         response_body[j] = '\0';
-        
-        
         
         int chunk_size = (int)strtol(&response_body[i], NULL, 16);
         
@@ -226,11 +211,12 @@ int size_of_body(int sockfd) {
     
     return ret;
 }
-
+*/
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         syserr("wrong number of arguments");
     }
+    
     parse_command(argv);
     
     int sock;
@@ -262,25 +248,24 @@ int main(int argc, char *argv[]) {
     if (connect(sock, addr_result->ai_addr, addr_result->ai_addrlen) < 0) {
         syserr("connect");
     }
-
-    freeaddrinfo(addr_result);
+    freeaddrinfo(addr_result);    
+    
+    FILE *fp = fdopen(sock, "r");
+    if (!fp) {
+        syserr("failed fdopen");
+    }
+    
     
     send_get_request(sock);
+    read_header(fp);
     
-    read_response(sock);
-    
-    parse_header(sock);
-    
-    
-    printf("Dlugosc zasobu: %d\n", size_of_body(sock));
-    /*
-    for (int i = 0; i < response_length; i++) {
-        printf("%c", response[i]);
+    if (chunked) {
+        read_body_chunked(fp);
     }
-    */
     
+    printf("Dlugosc zasobu: %d\n", content_length);
     
-    free(response);
     free(host_addr);
+    fclose(fp);
     close(sock);
 }
