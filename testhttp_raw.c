@@ -23,7 +23,7 @@ static const char *COOKIE = "Set-Cookie: ";
 static const char *CHUNKED = "chunked";
 
 char *conn_addr;
-int port;
+char *port;
 char *cookies;
 char *http_addr;
 char *file_addr;      // adres pliku adresu http
@@ -43,7 +43,7 @@ void parse_command(char *argv[]) {
     for (size_t i = 0; i < strlen(argv[1]); i++) {
         if (argv[1][i] == ':') {
             argv[1][i] = '\0';
-            port = atoi(&argv[1][i + 1]);
+            port = &argv[1][i + 1];
             colon = true;
         }
     }
@@ -53,7 +53,7 @@ void parse_command(char *argv[]) {
     
     conn_addr = argv[1];
     
-    if (conn_addr[0] < '0' || conn_addr[0] > '9') {
+    /*if (conn_addr[0] < '0' || conn_addr[0] > '9') {
         struct hostent *hstnm;
         hstnm = gethostbyname(conn_addr);
         if (hstnm == 0) {
@@ -62,7 +62,7 @@ void parse_command(char *argv[]) {
         printf("[dbg] zamieniam: %s\n", conn_addr);
         conn_addr = inet_ntoa(*(struct in_addr *)hstnm->h_name); // to chyba nie dziala
         printf("[dbg] na: %s\n", conn_addr);
-    }
+    }*/
     
     cookies = argv[2];
     http_addr = argv[3];
@@ -219,8 +219,6 @@ int size_of_body(int sockfd) {
             break;
         }
         
-        
-        
         ret += chunk_size;
         
         i = j + chunk_size + 4;
@@ -234,33 +232,47 @@ int main(int argc, char *argv[]) {
         syserr("wrong number of arguments");
     }
     parse_command(argv);
-    //printf("[dbg] %s %d %s %s %s %s\n", conn_addr, port, cookies, http_addr, host_addr, file_addr);
     
-    
-    int sockfd;
-    struct sockaddr_in servaddr;
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1) {
-       syserr("socket creation failed"); 
-    } 
-    bzero(&servaddr, sizeof(servaddr));
-    
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(conn_addr);  // podane w komendzie
-    servaddr.sin_port = htons(port);                  // podane w komendzie
-    
-    if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
-        syserr("connection with the server failed");
+    int sock;
+    struct addrinfo addr_hints;
+    struct addrinfo *addr_result;
+
+    int err;
+
+    // 'converting' host/port in string to struct addrinfo
+    memset(&addr_hints, 0, sizeof(struct addrinfo));
+    addr_hints.ai_family = AF_INET; // IPv4
+    addr_hints.ai_socktype = SOCK_STREAM;
+    addr_hints.ai_protocol = IPPROTO_TCP;
+    err = getaddrinfo(conn_addr, port, &addr_hints, &addr_result);
+    if (err == EAI_SYSTEM) { // system error
+        syserr("getaddrinfo: %s", gai_strerror(err));
     }
+    else if (err != 0) { // other error (host not found, etc.)
+        fatal("getaddrinfo: %s", gai_strerror(err));
+    }
+
+    // initialize socket according to getaddrinfo results
+    sock = socket(addr_result->ai_family, addr_result->ai_socktype, addr_result->ai_protocol);
+    if (sock < 0) {
+        syserr("socket");
+    }
+
+    // connect socket to the server
+    if (connect(sock, addr_result->ai_addr, addr_result->ai_addrlen) < 0) {
+        syserr("connect");
+    }
+
+    freeaddrinfo(addr_result);
     
-    send_get_request(sockfd);
+    send_get_request(sock);
     
-    read_response(sockfd);
+    read_response(sock);
     
-    parse_header(sockfd);
+    parse_header(sock);
     
     
-    printf("Dlugosc zasobu: %d\n", size_of_body(sockfd));
+    printf("Dlugosc zasobu: %d\n", size_of_body(sock));
     /*
     for (int i = 0; i < response_length; i++) {
         printf("%c", response[i]);
@@ -270,5 +282,5 @@ int main(int argc, char *argv[]) {
     
     free(response);
     free(host_addr);
-    close(sockfd);
+    close(sock);
 }
