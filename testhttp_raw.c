@@ -11,8 +11,8 @@
 
 #include "err.h"
 
-#define GET_SIZE    650000
-#define BUFFER_SIZE 650000
+#define GET_SIZE    6500
+#define BUFFER_SIZE 6500
 #define SA struct sockaddr 
 
 // ./testhttp_raw www.mimuw.edu.pl:80 ciasteczka.txt http://www.mimuw.edu.pl/
@@ -138,6 +138,7 @@ bool read_header(FILE *stream) {
         return false;
     }
     
+    
     do {
         line_size = getline(&line_buf, &line_buf_size, stream);
         
@@ -179,7 +180,6 @@ void read_body_chunked(FILE *stream) {
     
     do {
         line_size = getline(&line_buf, &line_buf_size, stream);
-        
         int i = 0;
         while (line_buf[i] != '\r') {
             i++;
@@ -187,9 +187,7 @@ void read_body_chunked(FILE *stream) {
         line_buf[i] = '\0';
         
         int chunk_size = (int)strtol(line_buf, NULL, 16);
-        
-        printf("[dbg] chunk size = %d\n", chunk_size);
-        
+    
         if (chunk_size == 0) { // last chunk
             break;
         }
@@ -197,11 +195,10 @@ void read_body_chunked(FILE *stream) {
         content_length += chunk_size;
         
         for (i = 0; i < chunk_size + 2; i++) { // skip chunk_size + 2 bytes
-            char c;
-            fscanf(stream, "%c", &c);
-            printf("%c");
+            fgetc(stream);
         }
-    } while (line_size);
+    } while (line_size > 0);
+    
     
     free(line_buf);
 }
@@ -219,8 +216,6 @@ int main(int argc, char *argv[]) {
     }
     
     parse_command(argv);
-    
-    printf("[dbg] %s %s %s %s %s %s\n", conn_addr, port, cookies, http_addr, file_addr, host_addr);
     
     
     int sock;
@@ -262,13 +257,12 @@ int main(int argc, char *argv[]) {
     
     send_get_request(sock);
     
+    
     if (read_header(fp)) {
         if (chunked) {
-            printf("[dbg] CHUNKED!!!\n");
             read_body_chunked(fp);
         }
         else {
-            printf("[dbg] NOT CHUNKED\n");
             read_body_not_chunked(fp);
         }
         printf("Dlugosc zasobu: %d\n", content_length);
