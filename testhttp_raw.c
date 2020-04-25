@@ -11,8 +11,8 @@
 
 #include "err.h"
 
-#define GET_SIZE    65000
-#define BUFFER_SIZE 65000
+#define GET_SIZE    650000
+#define BUFFER_SIZE 650000
 #define SA struct sockaddr 
 
 // ./testhttp_raw www.mimuw.edu.pl:80 ciasteczka.txt http://www.mimuw.edu.pl/
@@ -22,6 +22,7 @@ static const char *ENCODING = "Transfer-Encoding: ";
 static const char *COOKIE = "Set-Cookie: ";
 static const char *CHUNKED = "chunked";
 static const char *CONTENT = "Content-Length: ";
+static const char *SEND_COOKIE = "Cookie: ";
 
 char *conn_addr;
 char *port;
@@ -92,8 +93,8 @@ void send_get_request(int sockfd) {
     int i = strlen(sendline);
     while (fscanf(file, "%c", &c) != EOF) {
         if (new_line) {
-            strncat(sendline, COOKIE, strlen(COOKIE));
-            i += strlen(COOKIE);
+            strncat(sendline, SEND_COOKIE, strlen(SEND_COOKIE));
+            i += strlen(SEND_COOKIE);
         }
         if (c == '\n') {
             new_line = true;
@@ -186,6 +187,9 @@ void read_body_chunked(FILE *stream) {
         line_buf[i] = '\0';
         
         int chunk_size = (int)strtol(line_buf, NULL, 16);
+        
+        printf("[dbg] chunk size = %d\n", chunk_size);
+        
         if (chunk_size == 0) { // last chunk
             break;
         }
@@ -193,7 +197,9 @@ void read_body_chunked(FILE *stream) {
         content_length += chunk_size;
         
         for (i = 0; i < chunk_size + 2; i++) { // skip chunk_size + 2 bytes
-            fgetc(stream);
+            char c;
+            fscanf(stream, "%c", &c);
+            printf("%c");
         }
     } while (line_size);
     
@@ -213,6 +219,9 @@ int main(int argc, char *argv[]) {
     }
     
     parse_command(argv);
+    
+    printf("[dbg] %s %s %s %s %s %s\n", conn_addr, port, cookies, http_addr, file_addr, host_addr);
+    
     
     int sock;
     struct addrinfo addr_hints;
@@ -255,9 +264,11 @@ int main(int argc, char *argv[]) {
     
     if (read_header(fp)) {
         if (chunked) {
+            printf("[dbg] CHUNKED!!!\n");
             read_body_chunked(fp);
         }
         else {
+            printf("[dbg] NOT CHUNKED\n");
             read_body_not_chunked(fp);
         }
         printf("Dlugosc zasobu: %d\n", content_length);

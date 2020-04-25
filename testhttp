@@ -1,0 +1,74 @@
+#!/usr/bin/python3
+
+import time
+import os
+import sys
+import subprocess
+import signal
+import time
+
+def print_err(err):
+    sys.stderr("ERROR: ", err)
+    sys.exit(1)
+
+if len(sys.argv) < 3:
+    print_err("enter cookie file and URL")
+
+cookie_file = sys.argv[1]
+url = sys.argv[2]
+port = "80"
+address = "localhost"
+tunnel_entrance = "127.0.0.1:3333"
+
+
+#parsing port
+if ":" in url[6:]:
+    first = last = url.find(":", 6) + 1
+    while last < len (url) and url[last] != '/':
+        last = last + 1
+    port = url[first:last]
+
+
+#parsing address
+slashes = 0
+for i in range(len(url)):
+    if url[i] == '/':
+        slashes = slashes + 1
+    if slashes == 2:
+        first = last = i + 1
+        while last < len(url) and url[last] != ':' and url[last] != '/':
+            last = last + 1
+        address = url[first:last]
+        break
+    
+print(cookie_file, url, port, address)
+
+stunnel_config = f"\
+pid = \n\
+foreground = yes\n\
+[service]\n\
+client = yes\n\
+accept = {tunnel_entrance}\n\
+connect = {address}:443\n"
+
+os.system("kill $(pidof stunnel)")
+
+#echo -e "pid=\nforeground=yes\n[service]\nclient = yes\naccept = $loopback:$port\nconnect = $host:$https_port" | stunnel -fd 0  &> /dev/null & export tunnel_pid=$!
+
+if url[0:5] == "http:":
+    os.system("./testhttp_raw " + address + ":" + port + " " + cookie_file + " " + url)
+elif url[0:6] == "https:":
+        
+    os.system(f"echo '{stunnel_config}' | stunnel -fd 0 &> /dev/null & export tunnel_pid=$!")
+    time.sleep(2)
+    command = "./testhttp_raw " + tunnel_entrance + " " + cookie_file + " " + url
+    print("EXECUTING COMMAND ", command)
+    os.system(command)
+else:
+    print_err("enter correct URL")
+
+
+
+
+
+#os.system("stunnel stunnel.conf");
