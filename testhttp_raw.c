@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <ctype.h>
 
 #include "err.h"
 
@@ -15,24 +16,36 @@
 #define BUFFER_SIZE 6500
 #define SA struct sockaddr 
 
-// ./testhttp_raw www.mimuw.edu.pl:80 ciasteczka.txt http://www.mimuw.edu.pl/
-
-static const char *OK_CODE = "HTTP/1.1 200";
-static const char *ENCODING = "Transfer-Encoding: ";
-static const char *COOKIE = "Set-Cookie: ";
-static const char *CHUNKED = "chunked";
-static const char *CONTENT = "Content-Length: ";
+static const char *OK_CODE     = "HTTP/1.1 200";
+static const char *ENCODING    = "Transfer-Encoding: ";
+static const char *COOKIE      = "Set-Cookie: ";
+static const char *CHUNKED     = "chunked";
+static const char *CONTENT     = "Content-Length: ";
 static const char *SEND_COOKIE = "Cookie: ";
 
 char *conn_addr;
 char *port;
 char *cookies;
 char *http_addr;
-char *file_addr;      // adres pliku adresu http
-char *host_addr;      // host (inny niż ip)
+char *file_addr;
+char *host_addr;
 
 bool chunked = false;
 int content_length = 0; 
+
+
+// not case sensitive compare (returns 0 if equal, 1 otherwise)
+int cmp_no_case(char *a, const char *b, size_t len) {
+    if (strlen(a) < len || strlen(b) < len) {
+        return 1;
+    }
+    for (int i = 0; i < len; i++) {
+        if (tolower(a[i]) != tolower(b[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 
 void parse_command(char *argv[]) {
@@ -56,6 +69,9 @@ void parse_command(char *argv[]) {
     http_addr = argv[3];
     
     host_addr = malloc(sizeof(char) * BUFFER_SIZE);
+    if (host_addr == NULL) {
+        syserr("malloc");
+    }
     bzero(host_addr, BUFFER_SIZE);
     
     int slash = 0;
@@ -89,35 +105,32 @@ void send_get_request(int sockfd) {
     FILE *file = fopen(cookies, "r");
     
     char c;
-    bool new_line = true;
     int i = strlen(sendline);
+    strncat(sendline, SEND_COOKIE, strlen(SEND_COOKIE));
+    i += strlen(SEND_COOKIE);
     while (fscanf(file, "%c", &c) != EOF) {
-        if (new_line) {
-            strncat(sendline, SEND_COOKIE, strlen(SEND_COOKIE));
-            i += strlen(SEND_COOKIE);
-        }
         if (c == '\n') {
-            new_line = true;
-            sendline[i++] = '\r';
-            sendline[i++] = '\n';
+            sendline[i++] = ';';
         }
         else {
-            new_line = false;
             sendline[i++] = c;
         }
     }
+    sendline[i++] = '\r';
+    sendline[i++] = '\n';
     
     strncat(sendline, "\r\n", strlen("\r\n"));
 
     
     if (write(sockfd, sendline, sizeof(sendline)) < 0) {
+        free(host_addr);
         syserr("bad write to socket");
     }
     
     fclose(file);
 }
 
-/* ===== używanie streama po sockecie ===== */
+
 bool read_header(FILE *stream) {
     char *line_buf = NULL;
     size_t line_buf_size = 0;
@@ -125,9 +138,8 @@ bool read_header(FILE *stream) {
     
     line_size = getline(&line_buf, &line_buf_size, stream);
     
-    
     // check if response is "200 OK"
-    if (strncmp(line_buf, OK_CODE, strlen(OK_CODE)) != 0) { 
+    if (cmp_no_case(line_buf, OK_CODE, strlen(OK_CODE)) != 0) { 
         int i = 0;
         while (line_buf[i] != '\r') {
             printf("%c", line_buf[i]);
@@ -138,19 +150,18 @@ bool read_header(FILE *stream) {
         return false;
     }
     
-    
     do {
         line_size = getline(&line_buf, &line_buf_size, stream);
         
-        if (strncmp(line_buf, "\r\n", strlen("\r\n")) == 0) { // end of header
+        if (cmp_no_case(line_buf, "\r\n", strlen("\r\n")) == 0) { // end of header
             break;
         }
-        else if (strncmp(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
-            if (strncmp(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
+        else if (cmp_no_case(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
+            if (cmp_no_case(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
                 chunked = true;
             }
         }
-        else if (strncmp(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
+        else if (cmp_no_case(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
             int i = strlen(CONTENT);
             while (line_buf[i] != '\r') { 
                 i++;
@@ -158,7 +169,7 @@ bool read_header(FILE *stream) {
             line_buf[i] = '\0';
             content_length = atoi(&line_buf[strlen(CONTENT)]);
         }
-        else if (strncmp(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
+        else if (cmp_no_case(line_buf, COOKIE, strlen(COOKIE)) == 0) { // Set-Cookie:
             int i = strlen(COOKIE);
             while (line_buf[i] != '\r' && line_buf[i] != ';' && line_buf[i] != ',') {
                 printf("%c", line_buf[i++]);
@@ -167,7 +178,6 @@ bool read_header(FILE *stream) {
         }
         
     } while (line_size);
-    
     
     free(line_buf);
     return true;
@@ -217,7 +227,6 @@ int main(int argc, char *argv[]) {
     
     parse_command(argv);
     
-    
     int sock;
     struct addrinfo addr_hints;
     struct addrinfo *addr_result;
@@ -231,20 +240,24 @@ int main(int argc, char *argv[]) {
     addr_hints.ai_protocol = IPPROTO_TCP;
     err = getaddrinfo(conn_addr, port, &addr_hints, &addr_result);
     if (err == EAI_SYSTEM) { // system error
+        free(host_addr);
         syserr("getaddrinfo: %s", gai_strerror(err));
     }
     else if (err != 0) { // other error (host not found, etc.)
+        free(host_addr);
         fatal("getaddrinfo: %s", gai_strerror(err));
     }
 
     // initialize socket according to getaddrinfo results
     sock = socket(addr_result->ai_family, addr_result->ai_socktype, addr_result->ai_protocol);
     if (sock < 0) {
+        free(host_addr);
         syserr("socket");
     }
 
     // connect socket to the server
     if (connect(sock, addr_result->ai_addr, addr_result->ai_addrlen) < 0) {
+        free(host_addr);
         syserr("connect");
     }
     freeaddrinfo(addr_result);    
@@ -254,9 +267,7 @@ int main(int argc, char *argv[]) {
         syserr("failed fdopen");
     }
     
-    
     send_get_request(sock);
-    
     
     if (read_header(fp)) {
         if (chunked) {
@@ -267,7 +278,6 @@ int main(int argc, char *argv[]) {
         }
         printf("Dlugosc zasobu: %d\n", content_length);
     }    
-    
     
     free(host_addr);
     fclose(fp);
