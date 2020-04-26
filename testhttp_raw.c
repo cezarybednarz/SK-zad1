@@ -12,8 +12,8 @@
 
 #include "err.h"
 
-#define GET_SIZE    6500
-#define BUFFER_SIZE 6500
+#define GET_SIZE    10000
+#define BUFFER_SIZE 10000
 #define SA struct sockaddr 
 
 static const char *OK_CODE     = "HTTP/1.1 200";
@@ -33,8 +33,7 @@ char *host_addr;
 bool chunked = false;
 int content_length = 0; 
 
-
-// not case sensitive compare (returns 0 if equal, 1 otherwise)
+// case insensitive compare (returns 0 if equal, 1 otherwise)
 int cmp_no_case(char *a, const char *b, size_t len) {
     if (strlen(a) < len || strlen(b) < len) {
         return 1;
@@ -195,20 +194,15 @@ void read_body_chunked(FILE *stream) {
             i++;
         }
         line_buf[i] = '\0';
-        
         int chunk_size = (int)strtol(line_buf, NULL, 16);
-    
         if (chunk_size == 0) { // last chunk
             break;
         }
-        
         content_length += chunk_size;
-        
         for (i = 0; i < chunk_size + 2; i++) { // skip chunk_size + 2 bytes
             fgetc(stream);
         }
     } while (line_size > 0);
-    
     
     free(line_buf);
 }
