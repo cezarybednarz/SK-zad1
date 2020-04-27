@@ -94,7 +94,7 @@ void parse_command(char *argv[]) {
 }
 
 
-void send_get_request(int sockfd) { 
+void send_get_request(int sockfd, FILE *stream) { 
     char sendline[GET_SIZE + 1] = {0};
     
     if (strlen(file_addr) == 0) { // if empty file
@@ -113,6 +113,13 @@ void send_get_request(int sockfd) {
     }
 
     FILE *file = fopen(cookies, "r");
+    
+    if (!file) {
+        free(host_addr);
+        fclose(stream);
+        close(sockfd);
+        syserr("no cookie file");
+    }
     
     char c;
     int i = strlen(sendline);
@@ -278,7 +285,7 @@ int main(int argc, char *argv[]) {
         syserr("failed fdopen");
     }
     
-    send_get_request(sock);
+    send_get_request(sock, fp);
     
     if (read_header(fp, sock)) {
         if (chunked) {
