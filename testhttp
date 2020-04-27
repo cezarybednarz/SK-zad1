@@ -45,14 +45,12 @@ client = yes\n\
 accept = {tunnel_entrance}\n\
 connect = {address}:443\n"
 
-#echo -e "pid=\nforeground=yes\n[service]\nclient = yes\naccept = $loopback:$port\nconnect = $host:$https_port" | stunnel -fd 0  &> /dev/null & export tunnel_pid=$!
-
 if url[:5] == "http:":
     os.system("./testhttp_raw " + address + ":" + port + " " + cookie_file + " " + url)
 elif url[:6] == "https:":
-    pid = int(os.popen(f"echo '{stunnel_config}' | stunnel -fd 0 &> /dev/null & echo $!").read())
+    os.system(f"echo '{stunnel_config}' | stunnel -fd 0 &> /dev/null")
     time.sleep(1)
     os.system("./testhttp_raw " + tunnel_entrance + " " + cookie_file + " " + url)
-    os.system("kill -9 $(pidof stunnel)") 
+    os.system(f"kill -9 $(pidof stunnel) &> /dev/null")
 else:
     print_err("enter correct URL")
