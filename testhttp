@@ -6,12 +6,9 @@ import subprocess
 import signal
 import time
 
-def print_err(err):
-    sys.stderr("ERROR: ", err)
-    sys.exit(1)
-
 if len(sys.argv) < 3:
-    print_err("enter cookie file and URL")
+    print("ERROR: enter two arguments", file=sys.stderr)
+    sys.exit(1)
 
 cookie_file = sys.argv[1]
 url = sys.argv[2]
@@ -53,4 +50,5 @@ elif url[:6] == "https:":
     os.system("./testhttp_raw " + tunnel_entrance + " " + cookie_file + " " + url)
     os.system(f"kill -9 $(pidof stunnel) &> /dev/null")
 else:
-    print_err("enter correct URL")
+    print("ERROR: enter correct url", file=sys.stderr)
+    sys.exit(1)
