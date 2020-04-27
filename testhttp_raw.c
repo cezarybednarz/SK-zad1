@@ -101,13 +101,17 @@ void send_get_request(int sockfd) {
         file_addr = "/";
     }
     
-    snprintf(sendline, GET_SIZE, 
-    "GET %s HTTP/1.1\r\nConnection: Close\r\n"
-    "Host: %s\r\n", file_addr, host_addr);
+    if (file_addr[0] != '/') {
+        snprintf(sendline, GET_SIZE, 
+        "GET /%s HTTP/1.1\r\nConnection: Close\r\n"
+        "Host: %s\r\n", file_addr, host_addr);
+    }
+    else {
+        snprintf(sendline, GET_SIZE, 
+        "GET %s HTTP/1.1\r\nConnection: Close\r\n"
+        "Host: %s\r\n", file_addr, host_addr);
+    }
 
-    
-    
-    
     FILE *file = fopen(cookies, "r");
     
     char c;
