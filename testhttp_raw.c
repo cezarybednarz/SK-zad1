@@ -134,7 +134,7 @@ void send_get_request(int sockfd) {
 }
 
 
-bool read_header(FILE *stream) {
+bool read_header(FILE *stream, int sock) {
     char *line_buf = NULL;
     size_t line_buf_size = 0;
     ssize_t line_size = 0;
@@ -160,8 +160,15 @@ bool read_header(FILE *stream) {
             break;
         }
         else if (cmp_no_case(line_buf, ENCODING, strlen(ENCODING)) == 0) { // Transfer-Encoding:
-            if (cmp_no_case(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0) {
+            if (cmp_no_case(&line_buf[strlen(ENCODING)], CHUNKED, strlen(CHUNKED)) == 0 ||
+                cmp_no_case(&line_buf[strlen(ENCODING)+1], CHUNKED, strlen(CHUNKED)) == 0) {
                 chunked = true;
+            }
+            else {
+                free(host_addr);
+                fclose(stream);
+                close(sock);
+                syserr("wrong value in Transfer-Encoding field");
             }
         }
         else if (cmp_no_case(line_buf, CONTENT, strlen(CONTENT)) == 0) { // Content-length:
@@ -267,7 +274,7 @@ int main(int argc, char *argv[]) {
     
     send_get_request(sock);
     
-    if (read_header(fp)) {
+    if (read_header(fp, sock)) {
         if (chunked) {
             read_body_chunked(fp);
         }
