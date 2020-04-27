@@ -123,7 +123,7 @@ void send_get_request(int sockfd, FILE *stream) {
     
     char c;
     int i = strlen(sendline);
-    strncat(sendline, SEND_COOKIE, strlen(SEND_COOKIE));
+    strcat(sendline, SEND_COOKIE);
     i += strlen(SEND_COOKIE);
     while (fscanf(file, "%c", &c) != EOF) {
         if (c == '\n') {
@@ -136,7 +136,7 @@ void send_get_request(int sockfd, FILE *stream) {
     sendline[i++] = '\r';
     sendline[i++] = '\n';
     
-    strncat(sendline, "\r\n", strlen("\r\n"));
+    strcat(sendline, "\r\n");
     
     if (write(sockfd, sendline, sizeof(sendline)) < 0) {
         free(host_addr);
