@@ -97,6 +97,10 @@ void parse_command(char *argv[]) {
 void send_get_request(int sockfd) { 
     char sendline[GET_SIZE + 1] = {0};
     
+    if (strlen(file_addr) == 0) {
+        file_addr = "/";
+    }
+    
     snprintf(sendline, GET_SIZE, 
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n", file_addr, host_addr);
@@ -125,7 +129,7 @@ void send_get_request(int sockfd) {
         free(host_addr);
         syserr("bad write to socket");
     }
-    
+
     fclose(file);
 }
 
