@@ -5,6 +5,7 @@ import sys
 import subprocess
 import signal
 import time
+from urllib.parse import urlparse
 
 def print_err(err):
     sys.stderr("ERROR: ", err)
@@ -15,28 +16,10 @@ if len(sys.argv) < 3:
 
 cookie_file = sys.argv[1]
 url = sys.argv[2]
-port = "80"
-address = "localhost"
+parsed = urlparse(url)
+port = parsed.port
+address = parsed.netloc
 tunnel_entrance = "127.0.0.1:33333"
-
-#parsing port
-if ":" in url[6:]:
-    first = last = url.find(":", 6) + 1
-    while last < len (url) and url[last] != '/':
-        last = last + 1
-    port = url[first:last]
-
-#parsing address
-slashes = 0
-for i in range(len(url)):
-    if url[i] == '/':
-        slashes = slashes + 1
-    if slashes == 2:
-        first = last = i + 1
-        while last < len(url) and url[last] != ':' and url[last] != '/':
-            last = last + 1
-        address = url[first:last]
-        break
 
 stunnel_config = f"\
 pid = \n\

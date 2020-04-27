@@ -14,7 +14,6 @@
 
 #define GET_SIZE    10000
 #define BUFFER_SIZE 10000
-#define SA struct sockaddr 
 
 static const char *OK_CODE     = "HTTP/1.1 200";
 static const char *ENCODING    = "Transfer-Encoding: ";
@@ -82,7 +81,8 @@ void parse_command(char *argv[]) {
         if(slash == 2) { 
             i++;
             int first = i;
-            while (i < strlen(argv[3]) && argv[3][i] != '/')  {
+            while (i < strlen(argv[3]) && argv[3][i] != '/' && argv[3][i] != '?' && 
+                   argv[3][i] != ';' && argv[3][i] != '#')  {
                 host_addr[i - first] = argv[3][i];
                 i++;
             }
@@ -97,13 +97,16 @@ void parse_command(char *argv[]) {
 void send_get_request(int sockfd) { 
     char sendline[GET_SIZE + 1] = {0};
     
-    if (strlen(file_addr) == 0) {
+    if (strlen(file_addr) == 0) { // if empty file
         file_addr = "/";
     }
     
     snprintf(sendline, GET_SIZE, 
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n", file_addr, host_addr);
+    "GET %s HTTP/1.1\r\nConnection: Close\r\n"
+    "Host: %s\r\n", file_addr, host_addr);
+
+    
+    
     
     FILE *file = fopen(cookies, "r");
     
@@ -123,13 +126,12 @@ void send_get_request(int sockfd) {
     sendline[i++] = '\n';
     
     strncat(sendline, "\r\n", strlen("\r\n"));
-
     
     if (write(sockfd, sendline, sizeof(sendline)) < 0) {
         free(host_addr);
         syserr("bad write to socket");
     }
-
+    
     fclose(file);
 }
 
