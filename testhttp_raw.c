@@ -91,8 +91,6 @@ void parse_command(char *argv[]) {
         }
         i++;
     }
-    
-    printf("%s %s %s %s %s %s\n", conn_addr, port, cookies, http_addr, file_addr, host_addr);
 }
 
 
